@@ -1,0 +1,156 @@
+---
+title: "Relatório de Câmbio 💸"
+subtitle: "Cotação e evolução frente ao real"
+author: "Marlon R. D. Soares"
+date: today
+lang: pt
+format: html
+theme:
+  light: flatly
+  dark: darkly
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+#| label: setup-inicial
+#| include: false
+#| echo: false
+#| warning: false
+!pip install pandas
+!pip install pyyaml
+!pip install nbclient
+!pip install plotnine
+!pip install numpy
+
+import pandas as pd
+import plotnine as p9
+import numpy as np
+
+dados = pd.read_csv('dados.csv').assign(data = lambda x: pd.to_datetime(x.data))
+```
+
+```{python}
+#| label: processamento-dados-cotacao
+#| echo: false
+cotacao_variacao = (
+    dados
+    .melt(id_vars = "data")
+    .assign(ano_mes = lambda x: x.data.dt.strftime("%Y%m"))
+    .groupby(by = ["ano_mes", "variable"], as_index = False)
+    .value
+    .agg(inicio = "first", fim = "last")
+    .assign(
+        variacao_mes = lambda x: ((x.fim / x.inicio) - 1) * 100,
+        data = lambda x: pd.to_datetime(x.ano_mes, format = "%Y%m")
+        )
+    .query("data == data.max()")
+    .filter(items = ["variable","fim", "variacao_mes"])
+    .set_index("variable")
+    .join(
+        other = (
+            dados
+    .melt(id_vars = "data")
+    .assign(ano = lambda x: x.data.dt.year)
+    .groupby(by = ["ano", "variable"], as_index = False)
+    .value
+    .agg(inicio = "first", fim = "last")
+    .assign(
+        variacao_ano = lambda x: ((x.fim / x.inicio) - 1) * 100
+        )
+    .query("ano == ano.max()")
+    .filter(items = ["variable", "variacao_ano"])
+    .set_index("variable")
+        ),
+        how = "left"
+    )
+    .reset_index()
+    .rename(
+        columns = {
+            "variable": "Moeda",
+            "fim": "Última cotação (moeda/R$)",
+            "variacao_mes": "Variação % no mês",
+            "variacao_ano": "Variação % no ano"
+        }
+    ).set_index("Moeda")
+)
+```
+
+```{python}
+#| label: geracao-grafico-evolucao
+#| echo: false
+cotacao_evolucao = (
+    p9.ggplot(dados.melt(id_vars = "data")) +
+    p9.aes(x = "data", y = "value") +
+    p9.geom_line() +
+    p9.facet_wrap(facets = "variable", scales = "free") +
+    p9.scale_x_date(date_breaks = "1 year", date_labels ="%Y") +
+    p9.labs(
+        title = "Evolução do mercado cambial",
+        subtitle = "Moedas selecionadas contra o Real brasileiro",
+        x = "",
+        y = "Moeda / R$",
+        caption = "Dados: BCB | Elaboração: Marlon R. D. Soares"
+    ) +
+    p9.theme_gray(base_size=16)
+)
+```
+
+Este relatório apresenta dados sobre a evolução do mercado cambial brasileiro. As últimas cotações e variações de taxas de câmbio selecionadas são apresentadas na tabela abaixo. A evolução histórica recente é apresentada no gráfico ao lado. As taxas de câmbio são expressas em unidade monetária corrente para Real brasileiro (u.m.c./R$) e os dados são do Banco Central do Brasil.
+
+### Destaques
+
+```{python}
+#| label: calculo-destaques
+#| echo: false
+#| warning: false
+
+usd_eur = (
+    cotacao_variacao
+    .reset_index()
+    .query("Moeda in ['Dólar Americano','Euro']")
+    .round(2)
+)
+
+data_formatada = dados.data.max().strftime("%d/%m/%Y")
+
+dolar_linha = usd_eur[usd_eur['Moeda'] == 'Dólar Americano'].iloc[0]
+dolar_cot_str = f"{dolar_linha['Última cotação (moeda/R$)']:.2f}".replace('.', ',')
+dolar_var_mes_str = f"{dolar_linha['Variação % no mês']:.2f}".replace('.', ',')
+dolar_var_ano_str = f"{dolar_linha['Variação % no ano']:.2f}".replace('.', ',')
+
+euro_linha = usd_eur[usd_eur['Moeda'] == 'Euro'].iloc[0]
+euro_cot_str = f"{euro_linha['Última cotação (moeda/R$)']:.2f}".replace('.', ',')
+euro_var_mes_str = f"{euro_linha['Variação % no mês']:.2f}".replace('.', ',')
+euro_var_ano_str = f"{euro_linha['Variação % no ano']:.2f}".replace('.', ',')
+```
+
+- O dólar fechou em R$ `{python} dolar_cot_str` em `{python} data_formatada`, tendo variado `{python} dolar_var_mes_str`% no mês e `{python} dolar_var_ano_str`% no ano.
+- O euro fechou em R$ `{python} euro_cot_str` na mesma data, tendo variado `{python} euro_var_mes_str`% no mês e `{python} euro_var_ano_str`% no ano.
+
+::: {.grid}
+
+::: {.g-col-6}
+
+### Taxas de câmbio (moeda/R$)
+
+```{python}
+#| label: exibir-tabela-cotacao
+#| echo: false
+cotacao_variacao
+```
+
+:::
+
+::: {.g-col-6}
+
+### Histórico recente (mode/R$)
+
+```{python}
+#| label: exibir-grafico-evolucao
+#| echo: false
+cotacao_evolucao
+```
+
+:::
